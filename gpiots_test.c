@@ -32,17 +32,23 @@ SOFTWARE.
 
 #include "fifo.h"
 
-#define LUSSEN 2
-#define NGPIOS (LUSSEN * 2)
+#include <wiringPi.h>
+
+#define NGPIOS 2
+#define LP_GPIO 17
+#define VSYNC_GPIO 22
+#define BUT_GPIO 27 // 1 released, 0 pushed
 
 int main(int argc, char **argv) {
 
+if (wiringPiSetupGpio() == -1) {
+    perror("wiring\n");
+    return 1 ;
+}
+    pinMode(BUT_GPIO,INPUT);
+
     struct timespec ts;
-    fifo_payload_t lus[LUSSEN];
-    for (int i = 0; i < LUSSEN; ++i) {
-        lus[i].lusid = i;
-        lus[i].ts_start = lus[i].ts_end = (struct timespec) { 0, 0 }; 
-    }
+
     int files[NGPIOS];
     for (int i = 0; i < NGPIOS; ++i) {
         char gpio[64];
@@ -60,6 +66,7 @@ int main(int argc, char **argv) {
         fds[i].fd = files[i];
         fds[i].events = POLLPRI | POLLERR;
     }
+    long ulast[NGPIOS];
     while (true) {
         int rc = poll(fds, NGPIOS, 2000);
         if (rc < 0) { // error
@@ -70,38 +77,15 @@ int main(int argc, char **argv) {
             //printf("poll timeout\n");
             continue;
         }
-        for (int i = 0; i < NGPIOS; ++i) {
-            if (fds[i].revents != 0) {
-                n = read(files[i], &ts, 1);
-                if (n == 1) {
-                    //printf("%d  %ld %ld\n", i, ts[i].tv_sec, ts[i].tv_nsec);
-                } else {
-                    printf("**************read failed for fd%d\n", i);
-                    continue;
-                }
-                int tsi = i / 2;
-                if ((i & 1) == 0) {
-                    lus[tsi].ts_start = ts;
-                } else {
-                    lus[tsi].ts_end = ts;
-                }
-           } 
-        }
-        for (int i = 0 ; i < LUSSEN; ++i) {
-            if (lus[i].ts_end.tv_sec > 0) {
-                long usecs_start = lus[i].ts_start.tv_sec * 1000000 + (lus[i].ts_start.tv_nsec / 1000);
-                long usecs_end = lus[i].ts_end.tv_sec * 1000000 + (lus[i].ts_end.tv_nsec / 1000);
-                long micros = usecs_end - usecs_start;
-                if (micros > 0) {
-                    double kmph = (0.00025 * 3600 * 1000 * 1000) / (double)micros;
-                    printf("lus: %d, diff: %ld, kmph: %1.0f\n", lus[i].lusid, micros, round(kmph));    
-                } else {
-                    printf("lus %d: ***interrupts arrived out of order\n", lus[i].lusid);               
-                }
-                lus[i].ts_start = lus[i].ts_end = (struct timespec){ 0, 0 };
-            }
-           
-        }
+	for (int i = 0; i< NGPIOS; ++i) {
+    	    if (fds[i].revents!=0) { // LP event
+	        n = read(files[i], &ts, 1);
+        	long usecs = ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+    		printf("LP%i: %ld\t",i,usecs-ulast[i]);
+		ulast[i] = usecs;
+	    }
+	}
+	printf("\n");
     }
     for (int i = 0; i < NGPIOS; ++i) {
         close(files[i]);

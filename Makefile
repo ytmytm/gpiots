@@ -25,6 +25,6 @@ clean:
 	rm -rf .tmp_versions
 
 test: gpiots_test.c fifo.c
-	$(CC) -o test gpiots_test.c fifo.c -lm
+	$(CC) -o test gpiots_test.c fifo.c -lm -lwiringPi
 
 endif
