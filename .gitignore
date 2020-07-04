@@ -3,3 +3,6 @@
 *.cmd
 *.symvers
 test
+.tmp_versions
+*.mod.c
+modules.order
