@@ -46,7 +46,6 @@ SOFTWARE.
 #include <linux/poll.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/wait.h>
@@ -65,11 +64,10 @@ SOFTWARE.
 // ------------------- Device Info structure --------------------------------
 struct gpio_ts_devinfo {
     struct timespec ts;                 // timestamp of most recent event
-    long usecs;
-    spinlock_t spinlock;                // spinlock for protecting FIFO access
+    long usecs;                         // same, calculated usecs
     wait_queue_head_t waitqueue;        // the waitqueue for poll() support
     int opencount;                      // to ensure exclusive access to each GPIO device
-    int num;                            // 1=lp, 0=vsync
+    int num;                            // 0=lp, 1=vsync
 };
 
 // ------------------irq handler prototype----------------------------------
@@ -142,6 +140,7 @@ static long lastvsync;
 static long lastlp;
 static int xpos;
 static int ypos;
+static bool have_data;
 //
 static            long usecoffset;
 static            int oddeven;
@@ -153,6 +152,11 @@ static ssize_t gpio_ts_read(struct file *filp, char *buffer, size_t length, loff
     ssize_t lg;
     int err;
 
+    // check here if there is any new data (queue/spinlock or whatever)
+
+    if (!have_data)
+        return 0;
+
 //    sprintf(message, "%i,%i,%i,%i,%ld,%ld,%ld\n", xpos, ypos, lp_button, oddeven, lastvsync, lastlp, usecoffset);
     sprintf(message, "%i,%i,%i\n", xpos, ypos, lp_button);
     lg = strlen(message);
@@ -160,6 +164,7 @@ static ssize_t gpio_ts_read(struct file *filp, char *buffer, size_t length, loff
     err = copy_to_user(buffer, message, lg);
     if (err != 0)
         return -EFAULT;
+    have_data = false;
     return lg;
 }
 
@@ -168,8 +173,21 @@ static ssize_t gpio_ts_read(struct file *filp, char *buffer, size_t length, loff
 // by the kernel following a waitqueue wake_up by the ISR
 //
 static unsigned int gpio_ts_poll(struct file *filp, struct poll_table_struct *polltable) {
+
+    struct gpio_ts_devinfo *devinfo;
+
     // we have data, return the appropriate mask
-    return POLLPRI | POLLIN;
+    if (have_data) {
+        return POLLPRI | POLLIN;
+    }
+
+    devinfo = filp->private_data;
+
+    // we have no data yet, put our wait queue in the kernel poll table
+    // so we can wait for a wake-up from the ISR when poll will be called again by the kernel
+    poll_wait(filp, &devinfo->waitqueue, polltable);
+    // return a zero mask so that we'll be put to sleep waiting on the waitqueue
+    return 0;
 }
 
 // ------------------ IRQ handler----------- ----------------------------
@@ -198,6 +216,13 @@ static irqreturn_t gpio_ts_handler(int irq, void *arg) {
     // note that it's just a pointer to devtable[gpio_index]
     devinfo = (struct gpio_ts_devinfo *)arg;
 
+    if (devinfo == NULL) {
+        return -IRQ_NONE;
+    }
+//    if (devinfo->opencount <= 0) { // ignore interrupts while nobody's listening
+//        return -IRQ_NONE;
+//    }
+
     // remember last timestamp
     usecs = timestamp.tv_sec * 1000000 + timestamp.tv_nsec / 1000;
 
@@ -210,6 +235,8 @@ static irqreturn_t gpio_ts_handler(int irq, void *arg) {
             usecoffset = usecs - lastvsync;
             ypos = usecoffset / PAL_LINE_LENGTH;
             xpos = usecoffset - (ypos*PAL_LINE_LENGTH);
+            have_data = true;
+            wake_up(&devinfo->waitqueue);
         }
     }
     if (devinfo->num==1) {      // if this is vsync just remember about it
@@ -249,6 +276,8 @@ static int __init gpio_ts_init(void) {
     int irq;
     struct gpio_ts_devinfo *devinfo;
 
+    have_data = false;
+
     // zero device table 
     for (i = 0; i < GPIO_TS_NB_ENTRIES_MAX; ++i) {
         devtable[i] = NULL;
@@ -256,7 +285,7 @@ static int __init gpio_ts_init(void) {
 
     // sanity checks
     if (gpio_ts_nb_gpios != 2) {
-        printk(KERN_ERR "%s: I need exactly two GPIO input (vsync,lp - in that order)\n", THIS_MODULE->name);
+        printk(KERN_ERR "%s: I need exactly two GPIO input (lp,vsync - in that order)\n", THIS_MODULE->name);
         return -EINVAL;
     }
 
@@ -294,7 +323,6 @@ static int __init gpio_ts_init(void) {
             return -ENOMEM;
         devinfo->opencount = 0;
         devinfo->num = i;
-        spin_lock_init(&devinfo->spinlock);
         init_waitqueue_head(&devinfo->waitqueue);
         devtable[i] = devinfo;
     }
@@ -330,15 +358,29 @@ static int __init gpio_ts_init(void) {
             printk(KERN_ERR "GPIOTS: request_irq returned error %d for gpio %d\n", err, gpio);
             return -ENODEV;
         }
+        switch (i) {
+            case 0:
+                printk(KERN_INFO "GPIOTS: gpio %d allocated for light pen sensor\n", gpio);
+                break;
+            case 1:
+                printk(KERN_INFO "GPIOTS: gpio %d allocated for VSYNC\n", gpio);
+                break;
+            default:
+                printk(KERN_INFO "GPIOTS: too many gpios %i\n", i);
+                break;
+        }
+
         irq_numbers[i] = irq;
     }
 
     gpio_request(gpio_lp_button, "sysfs");
     gpio_direction_input(gpio_lp_button);
     gpio_export(gpio_lp_button, false);
+    printk(KERN_INFO "GPIOTS: gpio %d allocated for light pen button input\n", gpio_lp_button);
     gpio_request(gpio_odd_even, "sysfs");
     gpio_direction_input(gpio_odd_even);
     gpio_export(gpio_odd_even, false);
+    printk(KERN_INFO "GPIOTS: gpio %d allocated for odd/even frame indicator input\n", gpio_odd_even);
 
     return 0;
 }
@@ -367,8 +409,10 @@ void __exit gpio_ts_exit(void) {
     }
     gpio_unexport(gpio_lp_button);
     gpio_free(gpio_lp_button);
+    printk(KERN_INFO "GPIOTS: released gpio %d\n", gpio_lp_button);
     gpio_unexport(gpio_odd_even);
     gpio_free(gpio_odd_even);
+    printk(KERN_INFO "GPIOTS: released gpio %d\n", gpio_odd_even);
 
     // clean up char devices
     cdev_del(&gpio_ts_cdev);
