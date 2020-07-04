@@ -229,7 +229,7 @@ static irqreturn_t gpio_ts_handler(int irq, void *arg) {
     // do we do calculations now?
     if (devinfo->num==0) {      // if this is lp irq
         oddeven = gpio_get_value(gpio_odd_even);
-        if (oddeven!=0) {        // need at least 2/50s difference and only even/odd frame
+        if (((usecs-lastlp)>5000) && (oddeven!=0)) {        // need at least some lines of difference and only even/odd frame
             lastlp = usecs;
             lp_button = gpio_get_value(gpio_lp_button);
             usecoffset = usecs - lastvsync;
