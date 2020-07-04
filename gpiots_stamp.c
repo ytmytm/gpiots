@@ -142,6 +142,9 @@ static long lastvsync;
 static long lastlp;
 static int xpos;
 static int ypos;
+//
+static            long usecoffset;
+static            int oddeven;
 
 //
 // read timestamps from the FIFO buffer, if any
@@ -150,6 +153,7 @@ static ssize_t gpio_ts_read(struct file *filp, char *buffer, size_t length, loff
     ssize_t lg;
     int err;
 
+//    sprintf(message, "%i,%i,%i,%i,%ld,%ld,%ld\n", xpos, ypos, lp_button, oddeven, lastvsync, lastlp, usecoffset);
     sprintf(message, "%i,%i,%i\n", xpos, ypos, lp_button);
     lg = strlen(message);
 
@@ -199,14 +203,13 @@ static irqreturn_t gpio_ts_handler(int irq, void *arg) {
 
     // do we do calculations now?
     if (devinfo->num==0) {      // if this is lp irq
-        int oddeven = gpio_get_value(gpio_odd_even);
-        if (((usecs - lastlp)>10000) && (oddeven!=0)) {        // need at least 2/50s difference and only even/odd frame
-            long offset;
+        oddeven = gpio_get_value(gpio_odd_even);
+        if (oddeven!=0) {        // need at least 2/50s difference and only even/odd frame
             lastlp = usecs;
             lp_button = gpio_get_value(gpio_lp_button);
-            offset = usecs - lastvsync;
-            ypos = offset / PAL_LINE_LENGTH;
-            xpos = offset - (ypos*PAL_LINE_LENGTH);
+            usecoffset = usecs - lastvsync;
+            ypos = usecoffset / PAL_LINE_LENGTH;
+            xpos = usecoffset - (ypos*PAL_LINE_LENGTH);
         }
     }
     if (devinfo->num==1) {      // if this is vsync just remember about it
