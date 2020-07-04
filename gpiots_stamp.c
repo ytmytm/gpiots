@@ -44,12 +44,8 @@ SOFTWARE.
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/poll.h>
-#include <linux/sched.h>
-#include <linux/slab.h>
-#include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/wait.h>
-#include <asm/uaccess.h>
 #include <linux/time.h>
 #include <linux/errno.h>
 
@@ -219,9 +215,6 @@ static irqreturn_t gpio_ts_handler(int irq, void *arg) {
     if (devinfo == NULL) {
         return -IRQ_NONE;
     }
-//    if (devinfo->opencount <= 0) { // ignore interrupts while nobody's listening
-//        return -IRQ_NONE;
-//    }
 
     // remember last timestamp
     usecs = timestamp.tv_sec * 1000000 + timestamp.tv_nsec / 1000;
