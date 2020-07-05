@@ -98,7 +98,9 @@ pygame.quit()
 # XXX kernel should calculate x/y raw positions from vsync/timing, convert to screen x/y and push as a touch event
 #
 cal_offsx = cal_topleft[0]
-cal_rangex = abs(cal_botright[0]-cal_topleft[0])
+cal_rangex = cal_botright[0]-cal_topleft[0]
+if cal_rangex<0:
+    cal_rangex = cal_rangex + PAL_LINE_LENGTH
 cal_scalex = int(256*SCREEN_WIDTH/(cal_rangex)) # 16 bit precision fixed-point integer (8.8)
 cal_offsy = cal_topleft[1]
 cal_rangey = abs(cal_botright[1]-cal_topleft[1]) # 16 bit precision fixed-point integer (8.8)
@@ -119,7 +121,12 @@ with uinput.Device(events) as device:
         (col,line,but) = [ int(x) for x in line ]
         # bitshift to go from 8.8 fixed-point to integers
         y = max(min(((line-cal_offsy)*cal_scaley) >> 8, SCREEN_HEIGHT), 0)
-        x = max(min(((col-cal_offsx)*cal_scalex) >> 8, SCREEN_WIDTH), 0)
+#        x = max(min(((col-cal_offsx)*cal_scalex) >> 8, SCREEN_WIDTH), 0)
+
+        xoffs = col-cal_offsx
+        if (xoffs<0):
+            xoffs = xoffs + (PAL_LINE_LENGTH << 8)
+        x = max(min(((xoffs*cal_scalex) >> 8), SCREEN_WIDTH), 0)
 
 #        print("x="+str(x)+",y="+str(y)+"\tline="+str(line)+",col="+str(col)+"\n")
         if but!=lastbut:

@@ -87,6 +87,9 @@ print("center is "+str(cal_center))
 #
 cal_offsx = cal_topleft[0]
 cal_rangex = abs(cal_botright[0]-cal_topleft[0])
+cal_rangex = cal_botright[0]-cal_topleft[0]
+if cal_rangex<0:
+    cal_rangex = cal_rangex + PAL_LINE_LENGTH
 cal_scalex = int(256*SCREEN_WIDTH/(cal_rangex)) # 16 bit precision fixed-point integer (8.8)
 cal_offsy = cal_topleft[1]
 cal_rangey = abs(cal_botright[1]-cal_topleft[1]) # 16 bit precision fixed-point integer (8.8)
@@ -108,7 +111,7 @@ try:
         xoffs = col-cal_offsx
         if (xoffs<0):
             xoffs = xoffs + (PAL_LINE_LENGTH << 8)
-        x = ((col-cal_offsx)*cal_scalex) >> 8
+        x = (xoffs*cal_scalex) >> 8
 #        print("x="+str(x)+",y="+str(y)+"\tline="+str(line)+",col="+str(col)+"\n")
         lcd.fill(BLACK)
         if but==1:
