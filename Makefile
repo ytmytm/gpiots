@@ -1,13 +1,13 @@
 ifneq (${KERNELRELEASE},)
 
-	obj-m  := gpiots.o
-	gpiots-y := gpiots_stamp.o
+	obj-m  := rpi_lightpen.o
+#	rpi_lightpen-y := rpi_lightpen.o
 
 else
 
 	MODULE_DIR := $(shell pwd)
 	KERNEL_DIR ?= /lib/modules/$(shell uname -r)/build
-	CFLAGS := -std=gnu99 -Wall -g 
+	CFLAGS := -std=gnu99 -Wall -g
 
 all: modules
 

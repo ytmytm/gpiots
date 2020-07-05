@@ -7,7 +7,7 @@ import sys
 import uinput
 
 PAL_LINE_LENGTH=64
-LP_DEVICE="/dev/gpiots0"
+LP_DEVICE="/dev/lightpen0"
 
 # screensize
 SCREEN_WIDTH=640
