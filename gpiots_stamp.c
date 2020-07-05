@@ -53,8 +53,8 @@ SOFTWARE.
 
 // ------------------ Default values ----------------------------------------
 
-#define GPIO_TS_CLASS_NAME "gpiots"       // device class name
-#define GPIO_TS_ENTRIES_NAME "gpiots%d"   // device name template
+#define GPIO_TS_CLASS_NAME "lightpen"       // device class name
+#define GPIO_TS_ENTRIES_NAME "lightpen%d"   // device name template
 #define GPIO_TS_NB_ENTRIES_MAX 2  // we only need 2 GPIOs
 
 #define PAL_LINE_LENGTH 64
@@ -293,32 +293,41 @@ static int __init gpio_ts_init(void) {
     for (i = 0; i < gpio_ts_nb_gpios; ++i) {
         gpio = gpio_ts_table[i];
         if (!gpio_is_valid(gpio)) {
-            printk(KERN_ERR "GPIOTS: invalid gpio pin %d\n", gpio);
+            printk(KERN_ERR "%s: invalid gpio pin %d\n", THIS_MODULE->name, gpio);
             return -ENODEV;
         }
+    }
+
+    if (!gpio_is_valid(gpio_lp_button)) {
+        printk(KERN_ERR "%s: invalid gpio pin %d for light pen button input\n", THIS_MODULE->name, gpio_lp_button);
+        return -ENODEV;
+    }
+
+    if (!gpio_is_valid(gpio_lp_button)) {
+        printk(KERN_ERR "%s: invalid gpio pin %d for odd/even frame indicator input\n", THIS_MODULE->name, gpio_odd_even);
+        return -ENODEV;
     }
 
     // create the character devices
 
     err = alloc_chrdev_region(&gpio_ts_dev, 0, gpio_ts_nb_gpios, THIS_MODULE->name);
     if (err != 0) {
-        printk(KERN_ERR "GPIOTS: error %d allocating chdev_region\n", err);
+        printk(KERN_ERR "%s: error %d allocating chdev_region\n", THIS_MODULE->name, err);
         return err;
     }
-    printk(KERN_INFO "GPIOTS: device region allocated, major number=%x\n", gpio_ts_dev);
+    printk(KERN_INFO "%s: device region allocated, major number=%x\n", THIS_MODULE->name, gpio_ts_dev);
 
     gpio_ts_class = class_create(THIS_MODULE, GPIO_TS_CLASS_NAME);
     if (IS_ERR(gpio_ts_class)) {
-        printk(KERN_ERR "GPIOTS: Could not create class %s\n", GPIO_TS_CLASS_NAME);
+        printk(KERN_ERR "%s: Could not create class %s\n", THIS_MODULE->name, GPIO_TS_CLASS_NAME);
         unregister_chrdev_region(gpio_ts_dev, gpio_ts_nb_gpios);
         return -EINVAL;
     }
-    printk(KERN_INFO "GPIOTS: device class created\n");
+    printk(KERN_INFO "%s: device class created\n", THIS_MODULE->name);
 
     for (i = 0; i < gpio_ts_nb_gpios; i++) {
         device_create(gpio_ts_class, NULL, MKDEV(MAJOR(gpio_ts_dev), i), NULL, GPIO_TS_ENTRIES_NAME, i);
-        printk(KERN_INFO "GPIOTS: Device %d created\n", i);
-
+        printk(KERN_INFO "%s: Device %d created\n", THIS_MODULE->name, i);
         devinfo = kzalloc(sizeof(struct gpio_ts_devinfo), GFP_KERNEL);
         if (devinfo == NULL)
             return -ENOMEM;
@@ -349,25 +358,25 @@ static int __init gpio_ts_init(void) {
         gpio_request(gpio, "sysfs");
         gpio_direction_input(gpio);
         gpio_export(gpio, false);
-        printk(KERN_INFO "GPIOTS: gpio %d exported to sysfs for input\n", gpio);
+        printk(KERN_INFO "%s: gpio %d exported to sysfs for input\n", THIS_MODULE->name, gpio);
         irq = gpio_to_irq(gpio);
-        printk(KERN_INFO "GPIOTS: gpio %d mapped to IRQ %d\n", gpio, irq);
+        printk(KERN_INFO "%s: gpio %d mapped to IRQ %d\n", THIS_MODULE->name, gpio, irq);
         err = request_irq(irq, gpio_ts_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, THIS_MODULE->name, devtable[i]);
         if (err != 0) {
             devinfo = devtable[i];
             kfree(devinfo);
-            printk(KERN_ERR "GPIOTS: request_irq returned error %d for gpio %d\n", err, gpio);
+            printk(KERN_ERR "%s: request_irq returned error %d for gpio %d\n", THIS_MODULE->name, err, gpio);
             return -ENODEV;
         }
         switch (i) {
             case 0:
-                printk(KERN_INFO "GPIOTS: gpio %d allocated for light pen sensor\n", gpio);
+                printk(KERN_INFO "%s: gpio %d allocated for light pen sensor\n", THIS_MODULE->name, gpio);
                 break;
             case 1:
-                printk(KERN_INFO "GPIOTS: gpio %d allocated for VSYNC\n", gpio);
+                printk(KERN_INFO "%s: gpio %d allocated for VSYNC\n", THIS_MODULE->name, gpio);
                 break;
             default:
-                printk(KERN_INFO "GPIOTS: too many gpios %i\n", i);
+                printk(KERN_INFO "%s: too many gpios %i\n", THIS_MODULE->name, i);
                 break;
         }
 
@@ -377,11 +386,11 @@ static int __init gpio_ts_init(void) {
     gpio_request(gpio_lp_button, "sysfs");
     gpio_direction_input(gpio_lp_button);
     gpio_export(gpio_lp_button, false);
-    printk(KERN_INFO "GPIOTS: gpio %d allocated for light pen button input\n", gpio_lp_button);
+    printk(KERN_INFO "%s: gpio %d allocated for light pen button input\n", THIS_MODULE->name, gpio_lp_button);
     gpio_request(gpio_odd_even, "sysfs");
     gpio_direction_input(gpio_odd_even);
     gpio_export(gpio_odd_even, false);
-    printk(KERN_INFO "GPIOTS: gpio %d allocated for odd/even frame indicator input\n", gpio_odd_even);
+    printk(KERN_INFO "%s: gpio %d allocated for odd/even frame indicator input\n", THIS_MODULE->name, gpio_odd_even);
 
     return 0;
 }
@@ -406,14 +415,14 @@ void __exit gpio_ts_exit(void) {
         free_irq(irq, devtable[i]);
         gpio_unexport(gpio);
         gpio_free(gpio);
-        printk(KERN_INFO "GPIOTS: released gpio %d, irq %d\n", gpio, irq);
+        printk(KERN_INFO "%s: released gpio %d, irq %d\n", THIS_MODULE->name, gpio, irq);
     }
     gpio_unexport(gpio_lp_button);
     gpio_free(gpio_lp_button);
-    printk(KERN_INFO "GPIOTS: released gpio %d\n", gpio_lp_button);
+    printk(KERN_INFO "%s: released gpio %d\n", THIS_MODULE->name, gpio_lp_button);
     gpio_unexport(gpio_odd_even);
     gpio_free(gpio_odd_even);
-    printk(KERN_INFO "GPIOTS: released gpio %d\n", gpio_odd_even);
+    printk(KERN_INFO "%s: released gpio %d\n", THIS_MODULE->name, gpio_odd_even);
 
     // clean up char devices
     cdev_del(&gpio_ts_cdev);
