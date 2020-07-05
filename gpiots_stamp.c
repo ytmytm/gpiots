@@ -150,15 +150,14 @@ static ssize_t gpio_ts_read(struct file *filp, char *buffer, size_t length, loff
     ssize_t lg;
     int err;
 
-    // check here if there is any new data (queue/spinlock or whatever)
+    // do we have any data?
     if (!have_data) {
-        //struct gpio_ts_devinfo *devinfo = filp->private_data;
-        // non-blocking read
+        struct gpio_ts_devinfo *devinfo = filp->private_data;
+        // non-blocking read return now
         if (filp->f_flags & O_NONBLOCK)
             return -EAGAIN;
-        // blocking read doesn't work, why?
-        // wait_event(devinfo->waitqueue, have_data);
-        return 0; // do this instead
+        // blocking read has to wait
+        wait_event(devinfo->waitqueue, have_data);
     }
 
 //    sprintf(message, "%i,%i,%i,%i,%ld,%ld,%ld\n", xpos, ypos, lp_button, oddeven, lastvsync, lastlp, usecoffset);
