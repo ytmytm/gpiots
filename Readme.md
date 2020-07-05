@@ -1,21 +1,45 @@
-# gpiots
+# rpi-lightpen
 
-A Linux kernel module for timestamping GPIO interrupts
-including a character device driver for reading the timestamped interrupts
+A Linux kernel device driver for 8-bit era lightpen attached to GPIO with some support circuitry.
 
-Reading the GPIO interrupt timestamps is somewhat peculiar:
+Please visit https://hackaday.io/project/172255-light-pen-support-for-retropie for more details about this project.
 
-- read() is non-blocking: if no interrupts have occurred you simply get a zero return
-- you do not read characters, you read timestamps: the length parameter in read() specifies the number of timestamps you want to read. So your buffer size must be a multiple of sizeof(timespec), which is normally 8 bytes on 32-bit architecture, and 16 bytes on 64 bit architectures.
-- read() returns the number of timespec structs read, not the number of bytes
-- you should use poll() before you try to read() if you want to avoid reading in a loop until GPIO interrupts arrive
-- if no gpiots*x* device is open, GPIO interrupts for that GPIO are ignored and are not buffered
-- the default fifo buffer size in the kernel module is 128 timespec structs for each GPIO, but you can change this default by modifying the following define in the source of *gpio_stamp.c*:
+## Build
 
-`
-#define GPIO_TS_FIFO_SIZE 128     // size of FIFO timestamp buffer for each GPIO interrupt 
-`
+Just type `make`, you need to have kernel headers installed.
 
-- if the fifo buffer overflows the driver will log it, but otherwise you'll never know
-- the module has a single array parameter on install: `gpios=n1,n2,...` which lists the GPIO pins you want to monitor
+## Module parameters
+
+Insert module using provided `./insmodule.sh` script. The module parameters are:
+
+```
+sudo insmod ./gpiots.ko gpios=<lp sensor>,<vsync gpio> gpio_lp_button=<lp button>, gpio_odd_even=<odd/even>
+```
+
+- `<lp sensor>` - GPIO where light pen phototransistor sensor is connected
+- `<lp button>` - GPIO where light pen button line is connected
+- `<vsync gpio>` - GPIO where VSYNC line from LM1881 chip is connected
+- `<edd/even>` - GPIO where ODD/EVEN line from lM1881 chip is connected
+
+## NTSC support
+
+There is none. This module is calibrated for PAL with 64us per line.
+
+## Install
+
+Check commented-out parts of `insmodule.sh`.
+
+## Data
+
+Read coordinates from /dev/gpiots0.
+
+Every second frame (25 times per second), if light pen is pointed at the CRT screen, you will receive a single line with three numbers:
+
+```
+<x>,<y>,<b>\n
+```
+
+- `x` is column offset in range 0-63, please note that 0 might be somewhere in the middle of the line, you need to calibrate for wraparound and subtract left offset, then add 64 to negative numbers
+- `y` is line offset in range 0-305 (theoretical)
+- `b` is button state (0 is pressed, 1 is released)
 
