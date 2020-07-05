@@ -1,11 +1,14 @@
 /***************************************************************************
 
- Raspberry Pi GPIO interrupt time stamping kernel module and device driver.
+ Raspberry Pi GPIO lightpen driver
 
- Copyright (c) 2018 Danny Heijl
+ Copyright (c) 2020 Maciej Witkowiak
+ Copyright (c) 2018 Danny Heijl (gpiots)
 
  With many thanks to 
  
+    Danny Heijl (https://github.com/dheijl/gpiots)
+  and
     Derek Molloy (http://derekmolloy.ie/writing-a-linux-kernel-module-part-1-introduction/)
   and
     Christphe Blaess ( https://www.blaess.fr/christophe/2014/01/22/gpio-du-raspberry-pi-mesure-de-frequence/)
@@ -35,7 +38,6 @@ SOFTWARE.
 
 
 ***************************************************************************/
-
 
 #include <linux/cdev.h>
 #include <linux/device.h>
@@ -130,16 +132,16 @@ static int gpio_ts_release(struct inode *ind, struct file *filp) {
     return 0;
 }
 
-static char message[256] = {0};
-static short lp_button;
-static long lastvsync;
-static long lastlp;
-static int xpos;
-static int ypos;
-static bool have_data;
+static char message[256] = {0}; // device read message
+static short lp_button;         // light pen button state (read during LP event)
+static long lastvsync;          // usec timestamp of last vsync interrupt
+static long lastlp;             // usec timestamp of last LP event interrupt
+static int xpos;                // calculated X coordinate
+static int ypos;                // calculated Y coordinate
+static bool have_data;          // data availability flag (once every 2 frames)
 //
-static            long usecoffset;
-static            int oddeven;
+static long usecoffset;         // time difference between last LP event and VSYNC
+static int oddeven;             // marker if frame during LP event was even or odd
 
 //
 // read timestamps from the FIFO buffer, if any
@@ -149,9 +151,15 @@ static ssize_t gpio_ts_read(struct file *filp, char *buffer, size_t length, loff
     int err;
 
     // check here if there is any new data (queue/spinlock or whatever)
-
-    if (!have_data)
-        return 0;
+    if (!have_data) {
+        //struct gpio_ts_devinfo *devinfo = filp->private_data;
+        // non-blocking read
+        if (filp->f_flags & O_NONBLOCK)
+            return -EAGAIN;
+        // blocking read doesn't work, why?
+        // wait_event(devinfo->waitqueue, have_data);
+        return 0; // do this instead
+    }
 
 //    sprintf(message, "%i,%i,%i,%i,%ld,%ld,%ld\n", xpos, ypos, lp_button, oddeven, lastvsync, lastlp, usecoffset);
     sprintf(message, "%i,%i,%i\n", xpos, ypos, lp_button);
@@ -234,6 +242,7 @@ static irqreturn_t gpio_ts_handler(int irq, void *arg) {
     }
     if (devinfo->num==1) {      // if this is vsync just remember about it
         lastvsync = usecs;
+        lastlp = usecs;         // reset also time of lastlp, otherwise LP handler above might never run due to usecs-lastlp condition
     }
 
     return IRQ_HANDLED;
